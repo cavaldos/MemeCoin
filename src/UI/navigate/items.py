@@ -9,20 +9,16 @@ class NavItem:
 
 
 NAV_ITEMS = [
-    NavItem("dashboard", "Dashboard", "\u2302"),
-    NavItem("analyze", "Analyze", "\u2261"),
-    NavItem("trade", "Trade", "\u21c4"),
-    NavItem("signals", "Signals", "\u2691"),
-    NavItem("portfolio", "Portfolio", "\u25ce"),
+    NavItem("dexscreener", "DexScreener", "\u26fd"),
+    NavItem("gmgn", "GMGN.ai", "\U0001f4ca"),
+    NavItem("history", "History", "\U0001f5c2"),
     NavItem("settings", "Settings", "\u2699"),
 ]
 
 TAB_TITLES = {
-    "dashboard": ("\u2302  Dashboard", "Overview \u203a Home"),
-    "analyze": ("\u2261  Market Analysis", "Tools \u203a Analysis"),
-    "trade": ("\u21c4  Trading", "Execute \u203a New Order"),
-    "signals": ("\u2691  Trading Signals", "AI \u203a Signals"),
-    "portfolio": ("\u25ce  Portfolio", "Holdings \u203a Assets"),
+    "dexscreener": ("\u26fd  DexScreener Orders", "Sources \u203a DexScreener"),
+    "gmgn": ("\U0001f4ca  GMGN Orders", "Sources \u203a GMGN.ai"),
+    "history": ("\U0001f5c2  Filter History", "Config \u203a History"),
     "settings": ("\u2699  Settings", "Config \u203a Preferences"),
 }
 

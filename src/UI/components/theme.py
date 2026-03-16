@@ -45,6 +45,12 @@ Header {
     text-style: bold;
 }
 
+#uptime-display {
+    color: #e5c07b;
+    padding: 0 2 1 2;
+    text-style: bold;
+}
+
 .nav-item {
     width: 100%;
     height: 3;
@@ -184,6 +190,25 @@ Header {
     border-left: tall #e06c75;
 }
 
+.source-card {
+    height: auto;
+    padding: 1 2;
+    background: #21252b;
+    border: round #3e4451;
+    margin: 0 0 1 0;
+}
+
+.source-card:hover {
+    border: round #c678dd;
+}
+
+.data-item {
+    height: auto;
+    padding: 0 2;
+    margin: 0 0 0 0;
+    color: #abb2bf;
+}
+
 Input {
     margin: 0 0 1 0;
     border: round #3e4451;
@@ -257,6 +282,81 @@ Button.-error:hover {
     height: auto;
     layout: horizontal;
     margin: 1 0;
+}
+
+.coin-toggle {
+    width: 100%;
+    height: auto;
+    background: #21252b;
+    border: round #3e4451;
+    margin: 0 0 1 0;
+    padding: 0;
+}
+
+.coin-toggle:focus-within {
+    border: round #61afef;
+    background: #21252b;
+}
+
+.coin-toggle > CollapsibleTitle {
+    color: #abb2bf;
+    padding: 1 1;
+    text-style: bold;
+}
+
+.coin-toggle > CollapsibleTitle:hover {
+    background: #2c313a;
+    color: #61afef;
+}
+
+.coin-toggle > CollapsibleTitle:focus {
+    background: #2c313a;
+    color: #61afef;
+    text-style: bold;
+}
+
+.coin-toggle > Contents {
+    padding: 0 1 1 3;
+}
+
+.coin-details {
+    width: 100%;
+    height: auto;
+}
+
+.coin-url {
+    width: 100%;
+    margin: 0 0 1 0;
+    padding: 0 1;
+    border: round #3e4451;
+    background: #2c313a;
+    color: #56b6c2;
+}
+
+Button.copy-url-button {
+    width: 6;
+    min-width: 6;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+Button.copy-url-button.-primary {
+    background: #61afef;
+    color: #282c34;
+    border: none;
+}
+
+Button.copy-url-button:hover {
+    background: #528bbd;
+    color: #282c34;
+    border: none;
+}
+
+Button.copy-url-button:focus {
+    background: #528bbd;
+    color: #282c34;
+    border: none;
 }
 
 .table-header {
