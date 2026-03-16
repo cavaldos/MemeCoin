@@ -1,0 +1,13 @@
+[project]
+name = "MemeCoin"
+version = "0.1.0"
+description = "A cryptocurrency trading bot for meme coins."
+requires-python = ">=3.9"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
