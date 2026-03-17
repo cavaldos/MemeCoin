@@ -25,6 +25,8 @@ MCAP_STYLE = "bold #d19a66"
 VALUE_STYLE = "#abb2bf"
 STATUS_SENT_STYLE = "bold #98c379"
 STATUS_PENDING_STYLE = "bold #e5c07b"
+CHANGE_UP_STYLE = "bold #98c379"
+CHANGE_DOWN_STYLE = "bold #e06c75"
 
 
 def _as_dict(value: object) -> dict[str, object]:
@@ -64,8 +66,16 @@ def _status_label(row: dict[str, object]) -> tuple[str, str]:
     return ("SENT", STATUS_SENT_STYLE) if sent else ("PENDING", STATUS_PENDING_STYLE)
 
 
+def _volume_change_label(row: dict[str, object]) -> tuple[str, str]:
+    change = float(row.get("volume_change_percent_24h") or 0)
+    if change >= 0:
+        return (f"+{change:.2f}%", CHANGE_UP_STYLE)
+    return (f"{change:.2f}%", CHANGE_DOWN_STYLE)
+
+
 def _build_entry_text(row: dict[str, object]) -> Text:
     status_text, status_style = _status_label(row)
+    change_text, change_style = _volume_change_label(row)
     details = Text()
     details.append("Token: ", style=TOKEN_STYLE)
     details.append(f"{row.get('symbol') or '?'} - {row.get('name') or '-'}", style=VALUE_STYLE)
@@ -77,6 +87,8 @@ def _build_entry_text(row: dict[str, object]) -> Text:
     details.append(status_text, style=status_style)
     details.append("\nVolume: ", style=VOLUME_STYLE)
     details.append(f"${_currency_text(row.get('volume'))}", style=VALUE_STYLE)
+    details.append(" | Vol 24h %: ", style=VOLUME_STYLE)
+    details.append(change_text, style=change_style)
     details.append(" | MC: ", style=MCAP_STYLE)
     details.append(f"${_currency_text(row.get('market_cap'))}", style=VALUE_STYLE)
     details.append(" | Created: ", style=CHAIN_STYLE)
@@ -146,7 +158,7 @@ async def mount_history(container: ScrollableContainer) -> None:
         Static(
             f"[#5c6370]Config file:[/] [#abb2bf]{get_config_path()}[/]\n"
             f"[#5c6370]Stored coins:[/] [bold #abb2bf]{len(entries)}[/] [#5c6370]/[/] [bold #abb2bf]{max_entries}[/]\n"
-            f"[#5c6370]History only stores coin info, source website, filter type, and whether Discord already received it.[/]",
+            f"[#5c6370]Vol 24h % = change of tracked 24h volume since the coin was first seen in the current 24h window.[/]",
             classes="panel",
         )
     )

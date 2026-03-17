@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -91,6 +94,22 @@ def _format_datetime(value: object) -> str | None:
     return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _hours_between(start_value: object, end_value: object) -> float | None:
+    start_dt = _parse_datetime(start_value)
+    end_dt = _parse_datetime(end_value)
+    if start_dt is None or end_dt is None:
+        return None
+    return max((end_dt - start_dt).total_seconds(), 0) / 3600
+
+
+def _volume_change_percent(current_volume: object, baseline_volume: object) -> float:
+    current = _coerce_float(current_volume)
+    baseline = _coerce_float(baseline_volume)
+    if baseline <= 0:
+        return 0.0
+    return round(((current - baseline) / baseline) * 100, 2)
+
+
 def _empty_results() -> dict[str, object]:
     return {
         "generated_at": None,
@@ -110,6 +129,13 @@ def _empty_history() -> dict[str, object]:
     return {
         "max_entries": 200,
         "entries": [],
+    }
+
+
+def _empty_volume_tracking() -> dict[str, object]:
+    return {
+        "max_entries": 500,
+        "coins": [],
     }
 
 
@@ -158,6 +184,7 @@ def get_default_config() -> dict[str, object]:
             },
         },
         "history": _empty_history(),
+        "volume_tracking": _empty_volume_tracking(),
         "results": _empty_results(),
     }
 
@@ -210,10 +237,14 @@ def _build_history_entry(
     row: dict[str, object],
     *,
     sent_to_discord: bool,
+    detected_at: str | None = None,
 ) -> dict[str, object] | None:
     history_key = _build_history_key(filter_name, row)
     if history_key is None:
         return None
+
+    tracked_at = detected_at or _now_string()
+    current_volume = _coerce_float(row.get("volume"))
 
     return {
         "history_key": history_key,
@@ -229,6 +260,12 @@ def _build_history_entry(
         "age_minutes": row.get("age_minutes"),
         "url": row.get("url"),
         "source_sites": _extract_source_sites(row),
+        "tracked_at": tracked_at,
+        "last_seen_at": tracked_at,
+        "volume_baseline": current_volume,
+        "volume_baseline_at": tracked_at,
+        "current_volume": current_volume,
+        "volume_change_percent_24h": 0.0,
         "sent_to_discord": sent_to_discord,
     }
 
@@ -252,6 +289,12 @@ def _normalize_history_entry(raw_entry: dict[str, object]) -> dict[str, object] 
         "age_minutes": raw_entry.get("age_minutes"),
         "url": raw_entry.get("url"),
         "source_sites": source_sites,
+        "tracked_at": raw_entry.get("tracked_at") or raw_entry.get("first_seen_at"),
+        "last_seen_at": raw_entry.get("last_seen_at") or raw_entry.get("tracked_at") or raw_entry.get("first_seen_at"),
+        "volume_baseline": _coerce_float(raw_entry.get("volume_baseline", raw_entry.get("volume"))),
+        "volume_baseline_at": raw_entry.get("volume_baseline_at") or raw_entry.get("tracked_at") or raw_entry.get("first_seen_at"),
+        "current_volume": _coerce_float(raw_entry.get("current_volume", raw_entry.get("volume"))),
+        "volume_change_percent_24h": _coerce_float(raw_entry.get("volume_change_percent_24h", 0)),
         "sent_to_discord": bool(raw_entry.get("sent_to_discord", False)),
     }
 
@@ -335,16 +378,70 @@ def _normalize_history(raw_history: object) -> dict[str, object]:
     }
 
 
+def _normalize_volume_tracking_entry(raw_entry: dict[str, object]) -> dict[str, object] | None:
+    tracking_key = str(raw_entry.get("tracking_key") or "").strip()
+    source_name = str(raw_entry.get("source_name") or "").strip().lower()
+    if not tracking_key or not source_name:
+        return None
+
+    return {
+        "tracking_key": tracking_key,
+        "source_name": source_name,
+        "symbol": raw_entry.get("symbol"),
+        "name": raw_entry.get("name"),
+        "address": raw_entry.get("address"),
+        "chain": raw_entry.get("chain"),
+        "url": raw_entry.get("url"),
+        "current_volume": _coerce_float(raw_entry.get("current_volume", raw_entry.get("volume"))),
+        "volume_baseline": _coerce_float(raw_entry.get("volume_baseline", raw_entry.get("current_volume", raw_entry.get("volume")))),
+        "volume_baseline_at": raw_entry.get("volume_baseline_at") or raw_entry.get("tracked_at") or raw_entry.get("last_seen_at"),
+        "last_seen_at": raw_entry.get("last_seen_at") or raw_entry.get("tracked_at"),
+        "volume_change_percent_24h": _coerce_float(raw_entry.get("volume_change_percent_24h", 0)),
+    }
+
+
+def _normalize_volume_tracking(raw_tracking: object) -> dict[str, object]:
+    defaults = _empty_volume_tracking()
+    default_max_entries = _coerce_int(defaults.get("max_entries", 500), 500)
+    if not isinstance(raw_tracking, dict):
+        return defaults
+
+    max_entries = _coerce_int(raw_tracking.get("max_entries", default_max_entries), default_max_entries)
+    if max_entries < 1:
+        max_entries = 1
+
+    coins_obj = raw_tracking.get("coins")
+    raw_coins = [coin for coin in coins_obj if isinstance(coin, dict)] if isinstance(coins_obj, list) else []
+    normalized_coins: list[dict[str, object]] = []
+    seen_keys: set[str] = set()
+    for raw_coin in raw_coins:
+        coin = _normalize_volume_tracking_entry(raw_coin)
+        if coin is None:
+            continue
+        tracking_key = str(coin.get("tracking_key") or "")
+        if not tracking_key or tracking_key in seen_keys:
+            continue
+        seen_keys.add(tracking_key)
+        normalized_coins.append(coin)
+
+    return {
+        "max_entries": max_entries,
+        "coins": normalized_coins[:max_entries],
+    }
+
+
 def _normalize_config(raw_config: object) -> dict[str, object]:
     defaults = get_default_config()
     if not isinstance(raw_config, dict):
         return defaults
 
     raw_history = raw_config.get("history")
+    raw_volume_tracking = raw_config.get("volume_tracking")
     normalized = _deep_merge(defaults, raw_config)
     if not isinstance(normalized.get("results"), dict):
         normalized["results"] = _empty_results()
     normalized["history"] = _normalize_history(raw_history)
+    normalized["volume_tracking"] = _normalize_volume_tracking(raw_volume_tracking)
     return normalized
 
 
@@ -382,6 +479,109 @@ def load_history_entries() -> list[dict[str, object]]:
         return []
     entries = history.get("entries", [])
     return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+
+
+def _refresh_volume_tracking_for_source(
+    config: dict[str, object],
+    source_name: str,
+    rows: list[dict],
+    detected_at: str,
+) -> None:
+    volume_tracking = config.get("volume_tracking", {})
+    if not isinstance(volume_tracking, dict):
+        volume_tracking = _empty_volume_tracking()
+        config["volume_tracking"] = volume_tracking
+
+    coins_obj = volume_tracking.get("coins")
+    coins = [coin for coin in coins_obj if isinstance(coin, dict)] if isinstance(coins_obj, list) else []
+    volume_tracking["coins"] = coins
+
+    coin_map = {
+        str(coin.get("tracking_key") or ""): coin
+        for coin in coins
+        if str(coin.get("tracking_key") or "")
+    }
+
+    for row in rows:
+        tracking_key = _build_source_tracking_key(source_name, row)
+        if tracking_key is None:
+            continue
+
+        current_volume = _get_source_row_volume(source_name, row)
+        coin = coin_map.get(tracking_key)
+        if coin is None:
+            coin = {
+                "tracking_key": tracking_key,
+                "source_name": source_name,
+                "symbol": row.get("symbol"),
+                "name": row.get("name"),
+                "address": row.get("address"),
+                "chain": row.get("chain"),
+                "url": row.get("coin_url") or row.get("url"),
+                "current_volume": current_volume,
+                "volume_baseline": current_volume,
+                "volume_baseline_at": detected_at,
+                "last_seen_at": detected_at,
+                "volume_change_percent_24h": 0.0,
+            }
+            coins.append(coin)
+            coin_map[tracking_key] = coin
+            continue
+
+        hours_since_baseline = _hours_between(coin.get("volume_baseline_at"), detected_at)
+        if hours_since_baseline is None or hours_since_baseline >= 24:
+            coin["volume_baseline"] = current_volume
+            coin["volume_baseline_at"] = detected_at
+
+        coin["symbol"] = row.get("symbol")
+        coin["name"] = row.get("name")
+        coin["address"] = row.get("address")
+        coin["chain"] = row.get("chain")
+        coin["url"] = row.get("coin_url") or row.get("url")
+        coin["current_volume"] = current_volume
+        coin["last_seen_at"] = detected_at
+        coin["volume_change_percent_24h"] = _volume_change_percent(
+            current_volume,
+            coin.get("volume_baseline", current_volume),
+        )
+
+    max_entries = _coerce_int(volume_tracking.get("max_entries", 500), 500)
+    if max_entries < 1:
+        max_entries = 1
+    coins.sort(key=lambda coin: str(coin.get("last_seen_at") or ""), reverse=True)
+    del coins[max_entries:]
+
+
+def _refresh_volume_tracking(
+    config: dict[str, object],
+    dexscreener_rows: list[dict],
+    gmgn_rows: list[dict],
+    detected_at: str,
+) -> None:
+    _refresh_volume_tracking_for_source(config, "dexscreener", dexscreener_rows, detected_at)
+    _refresh_volume_tracking_for_source(config, "gmgn", gmgn_rows, detected_at)
+
+
+def annotate_source_rows_with_volume_change(source_name: str, rows: list[dict]) -> list[dict]:
+    config = load_config()
+    volume_tracking = config.get("volume_tracking", {})
+    coins = volume_tracking.get("coins", []) if isinstance(volume_tracking, dict) else []
+    tracking_lookup = {
+        str(coin.get("tracking_key") or ""): coin
+        for coin in coins
+        if isinstance(coin, dict)
+    }
+
+    annotated_rows: list[dict] = []
+    for row in rows:
+        row_copy = dict(row)
+        tracking_key = _build_source_tracking_key(source_name, row_copy)
+        tracking_entry = tracking_lookup.get(tracking_key or "", {})
+        row_copy["volume_change_percent_24h"] = _coerce_float(
+            tracking_entry.get("volume_change_percent_24h", 0) if isinstance(tracking_entry, dict) else 0
+        )
+        annotated_rows.append(row_copy)
+    return annotated_rows
 
 
 def save_config(config: dict[str, object]) -> str:
@@ -427,6 +627,19 @@ def _build_candidate_key(row: dict[str, object]) -> str | None:
     if url:
         return url
     return None
+
+
+def _build_source_tracking_key(source_name: str, row: dict[str, object]) -> str | None:
+    candidate_key = _build_candidate_key(row)
+    if candidate_key is None:
+        return None
+    return f"{source_name}:{candidate_key}"
+
+
+def _get_source_row_volume(source_name: str, row: dict[str, object]) -> float:
+    if source_name == "dexscreener":
+        return _coerce_float(row.get("volume_24h"))
+    return _coerce_float(row.get("volume"))
 
 
 def _normalize_source_row(source_name: str, row: dict[str, object], rank: int) -> dict[str, object]:
@@ -621,6 +834,7 @@ def _sort_result_items(filter_name: str, rows: list[dict[str, object]]) -> list[
 def _collect_new_history_entries(
     config: dict[str, object],
     results: dict[str, object],
+    detected_at: str,
 ) -> list[dict[str, object]]:
     history = config.get("history", {})
     history_entries = history.get("entries", []) if isinstance(history, dict) else []
@@ -642,7 +856,7 @@ def _collect_new_history_entries(
         current_rows_obj = results.get(filter_name, [])
         current_rows = [row for row in current_rows_obj if isinstance(row, dict)] if isinstance(current_rows_obj, list) else []
         for row in current_rows:
-            entry = _build_history_entry(filter_name, filter_label, row, sent_to_discord=False)
+            entry = _build_history_entry(filter_name, filter_label, row, sent_to_discord=False, detected_at=detected_at)
             if entry is None:
                 continue
             history_key = str(entry.get("history_key") or "")
@@ -671,6 +885,58 @@ def _append_history_entries(config: dict[str, object], new_entries: list[dict[st
     if max_entries < 1:
         max_entries = 1
     history["entries"] = history["entries"][:max_entries]
+
+
+def _refresh_history_entry_metrics(config: dict[str, object], results: dict[str, object], detected_at: str) -> None:
+    history = config.get("history", {})
+    if not isinstance(history, dict):
+        return
+
+    entries_obj = history.get("entries")
+    if not isinstance(entries_obj, list):
+        return
+
+    entry_map = {
+        str(entry.get("history_key") or ""): entry
+        for entry in entries_obj
+        if isinstance(entry, dict) and str(entry.get("history_key") or "")
+    }
+
+    for filter_name in ("main_trading", "strong_trending", "fast_trend"):
+        rows_obj = results.get(filter_name, [])
+        rows = [row for row in rows_obj if isinstance(row, dict)] if isinstance(rows_obj, list) else []
+        for row in rows:
+            history_key = _build_history_key(filter_name, row)
+            if history_key is None:
+                continue
+
+            entry = entry_map.get(history_key)
+            if entry is None:
+                continue
+
+            baseline_at = entry.get("volume_baseline_at")
+            hours_since_baseline = _hours_between(baseline_at, detected_at)
+            current_volume = _coerce_float(row.get("volume"))
+            if hours_since_baseline is None or hours_since_baseline >= 24:
+                entry["volume_baseline"] = current_volume
+                entry["volume_baseline_at"] = detected_at
+
+            entry["last_seen_at"] = detected_at
+            entry["name"] = row.get("name")
+            entry["symbol"] = row.get("symbol")
+            entry["address"] = row.get("address")
+            entry["chain"] = row.get("chain")
+            entry["volume"] = current_volume
+            entry["market_cap"] = _coerce_float(row.get("market_cap"))
+            entry["created_at"] = row.get("created_at")
+            entry["age_minutes"] = row.get("age_minutes")
+            entry["url"] = row.get("url")
+            entry["source_sites"] = _extract_source_sites(row)
+            entry["current_volume"] = current_volume
+            entry["volume_change_percent_24h"] = _volume_change_percent(
+                current_volume,
+                entry.get("volume_baseline", current_volume),
+            )
 
 
 def _mark_history_entries_sent(config: dict[str, object], sent_keys: set[str]) -> None:
@@ -731,6 +997,41 @@ def _send_new_entry_alerts(
     return sent_keys
 
 
+FILTER_LABEL_MAP: dict[str, str] = {
+    "main_trading": "Main Trading",
+    "strong_trending": "Strong Trending",
+    "fast_trend": "Fast Trend",
+}
+
+
+def _send_unsent_db_alerts(detected_at: str) -> None:
+    """Send Discord alerts for coins in the database that haven't been sent yet."""
+    try:
+        from .database import get_unsent_coins, mark_coins_sent
+        from .discord import send_filtered_alert
+    except Exception:
+        logger.exception("Failed to import database/discord modules for alerts")
+        return
+
+    for filter_name in ("main_trading", "strong_trending", "fast_trend"):
+        unsent = get_unsent_coins(filter_name)
+        if not unsent:
+            continue
+
+        filter_label = FILTER_LABEL_MAP.get(filter_name, filter_name)
+        sent_coin_keys: set[str] = set()
+
+        for coin in unsent:
+            if send_filtered_alert(filter_name, filter_label, coin, detected_at):
+                coin_key = str(coin.get("coin_key") or "")
+                if coin_key:
+                    sent_coin_keys.add(coin_key)
+
+        if sent_coin_keys:
+            mark_coins_sent(filter_name, sent_coin_keys)
+            logger.info("Sent %d alerts for %s", len(sent_coin_keys), filter_name)
+
+
 def refresh_config_results(
     *,
     config: dict[str, object] | None = None,
@@ -752,6 +1053,7 @@ def refresh_config_results(
     results["generated_at"] = _now_string()
     results["candidate_count"] = len(candidates)
     results["source_counts"] = source_counts
+    detected_at = str(results["generated_at"])
 
     for filter_name in ("main_trading", "strong_trending", "fast_trend"):
         filter_config = filters.get(filter_name, {})
@@ -760,15 +1062,27 @@ def refresh_config_results(
         matched = [candidate for candidate in candidates if _matches_filter(candidate, filter_config)]
         results[filter_name] = _sort_result_items(filter_name, matched)
 
-    new_entries = _collect_new_history_entries(active_config, results)
+    # --- Persist to per-trend database files & update existing entries ---
+    try:
+        from .database import add_coins, update_coins
+        for filter_name in ("main_trading", "strong_trending", "fast_trend"):
+            matched_rows = results.get(filter_name, [])
+            if isinstance(matched_rows, list) and matched_rows:
+                add_coins(filter_name, matched_rows)
+                update_coins(filter_name, matched_rows)
+    except Exception:
+        logger.exception("Failed to sync trend database")
+
+    _refresh_volume_tracking(active_config, dex_rows, gmgn_rows, detected_at)
+    _refresh_history_entry_metrics(active_config, results, detected_at)
+    new_entries = _collect_new_history_entries(active_config, results, detected_at)
     active_config["updated_at"] = results["generated_at"]
     active_config["results"] = results
     _append_history_entries(active_config, new_entries)
     save_config(active_config)
+
+    # --- Send Discord alerts using database as source of truth ---
     if send_alerts:
-        pending_entries = _get_pending_history_entries(active_config)
-        sent_keys = _send_new_entry_alerts(pending_entries, str(results["generated_at"]))
-        if sent_keys:
-            _mark_history_entries_sent(active_config, sent_keys)
-            save_config(active_config)
+        _send_unsent_db_alerts(detected_at)
+
     return active_config

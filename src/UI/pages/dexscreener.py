@@ -3,6 +3,8 @@ from rich.text import Text
 from textual.containers import ScrollableContainer, VerticalGroup
 from textual.widgets import Button, Collapsible, Input, Rule, Static
 
+from core.trending_config import annotate_source_rows_with_volume_change
+
 from .coin_metrics import format_age, format_compact_currency, format_created_at, format_full_currency, matches_query
 from .data_loader import load_data_file
 
@@ -43,6 +45,20 @@ def _format_created_at(value: object) -> str:
     return format_created_at(value)
 
 
+def _format_volume_change(value: object) -> str:
+    change = _as_float(value)
+    return f"{change:+.1f}%"
+
+
+def _volume_change_style(value: object) -> str:
+    change = _as_float(value)
+    if change > 0:
+        return VOLUME_STYLE
+    if change < 0:
+        return AGE_STYLE
+    return VALUE_STYLE
+
+
 def _display_url(value: object) -> str:
     url = str(value or "").strip()
     if not url:
@@ -74,6 +90,8 @@ def _build_header() -> Text:
     header.append("  ")
     _append_cell(header, "VOL 24H", 8, VOLUME_STYLE, align="right")
     header.append("  ")
+    _append_cell(header, "VOL 24H %", 10, VOLUME_STYLE, align="right")
+    header.append("  ")
     _append_cell(header, "MCAP", 8, MCAP_STYLE, align="right")
     header.append("  ")
     _append_cell(header, "AGE", 8, AGE_STYLE)
@@ -98,6 +116,7 @@ def _build_title(row: dict) -> str:
             _markup_cell(row.get("dex_id", "-") or "-", 10, DEX_STYLE),
             _markup_cell(_format_price(_as_float(row.get("price_usd", 0))), 11, PRICE_STYLE, align="right"),
             _markup_cell(format_compact_currency(row.get("volume_24h")), 8, VOLUME_STYLE, align="right"),
+            _markup_cell(_format_volume_change(row.get("volume_change_percent_24h")), 10, _volume_change_style(row.get("volume_change_percent_24h")), align="right"),
             _markup_cell(format_compact_currency(row.get("market_cap") or row.get("fdv")), 8, MCAP_STYLE, align="right"),
             _markup_cell(format_age(row.get("created_at") or row.get("pair_created_at")), 8, AGE_STYLE),
         ]
@@ -113,6 +132,7 @@ def _build_details(row: dict) -> Text:
     name = str(row.get("name", "-") or "-")
     trend_signals = ", ".join(row.get("trend_signals", [])) if isinstance(row.get("trend_signals"), list) else "-"
     signal_score = str(int(_as_float(row.get("signal_score", 0)))) if _as_float(row.get("signal_score", 0)) else "-"
+    volume_change = _format_volume_change(row.get("volume_change_percent_24h"))
     details = Text()
     details.append("Name: ", style=NAME_STYLE)
     details.append(name, style=VALUE_STYLE)
@@ -123,6 +143,8 @@ def _build_details(row: dict) -> Text:
     details.append(created_at, style=VALUE_STYLE)
     details.append(" | Vol 24h: ", style=VOLUME_STYLE)
     details.append(volume, style=VALUE_STYLE)
+    details.append(" | Vol 24h %: ", style=VOLUME_STYLE)
+    details.append(volume_change, style=_volume_change_style(row.get("volume_change_percent_24h")))
     details.append(" | Market cap: ", style=MCAP_STYLE)
     details.append(market_cap, style=VALUE_STYLE)
     details.append(" | Trend score: ", style=CHAIN_STYLE)
@@ -151,7 +173,7 @@ def _filter_rows(rows: list[dict], search_query: str) -> list[dict]:
 
 
 def _load_rows(search_query: str = "") -> tuple[list[dict], int]:
-    data = load_data_file("dexscreener_100_coins.json")
+    data = annotate_source_rows_with_volume_change("dexscreener", load_data_file("dexscreener_100_coins.json"))
     rows = sorted(
         data,
         key=lambda row: (

@@ -99,6 +99,3 @@ def send_filtered_alert(filter_key: str, filter_label: str, row: dict[str, objec
         ]
     )
     return send_message(message, webhook_url)
-
-if __name__ == "__main__":
-    send_message("Hello from MemeCoin bot!")

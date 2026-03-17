@@ -9,6 +9,7 @@ class NavItem:
 
 
 NAV_ITEMS = [
+    NavItem("all_symbols", "All Symbols", "\U0001f4d0"),
     NavItem("dexscreener", "DexScreener", "\u26fd"),
     NavItem("gmgn", "GMGN.ai", "\U0001f4ca"),
     NavItem("history", "History", "\U0001f5c2"),
@@ -16,6 +17,7 @@ NAV_ITEMS = [
 ]
 
 TAB_TITLES = {
+    "all_symbols": ("\U0001f4d0  All Symbols", "Database \u203a All Symbols"),
     "dexscreener": ("\u26fd  DexScreener Orders", "Sources \u203a DexScreener"),
     "gmgn": ("\U0001f4ca  GMGN Orders", "Sources \u203a GMGN.ai"),
     "history": ("\U0001f5c2  Filter History", "Config \u203a History"),

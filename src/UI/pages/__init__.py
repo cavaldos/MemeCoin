@@ -1,3 +1,4 @@
+from .all_symbols import mount_all_symbols, refresh_all_symbols_results
 from .dexscreener import mount_dexscreener, refresh_dexscreener_results
 from .gmgn import mount_gmgn, refresh_gmgn_results
 from .help import mount_help
@@ -7,6 +8,8 @@ from .sources import mount_sources
 
 __all__ = [
     "mount_sources",
+    "mount_all_symbols",
+    "refresh_all_symbols_results",
     "mount_dexscreener",
     "refresh_dexscreener_results",
     "mount_gmgn",

@@ -18,11 +18,13 @@ from core.trending_config import refresh_config_results, reset_config
 from .components import APP_CSS
 from .navigate import HELP_TAB_ID, NAV_ITEMS, TAB_TITLES
 from .pages import (
+    mount_all_symbols,
     mount_dexscreener,
     mount_gmgn,
     mount_help,
     mount_history,
     mount_settings,
+    refresh_all_symbols_results,
     refresh_dexscreener_results,
     refresh_gmgn_results,
 )
@@ -48,6 +50,7 @@ class MemeCoinTUI(App):
         self.search_queries = {
             "dexscreener": "",
             "gmgn": "",
+            "all_symbols": "",
         }
         self._last_market_success: dict[str, datetime | None] = {
             "dexscreener": None,
@@ -312,6 +315,8 @@ class MemeCoinTUI(App):
             self.search_queries["dexscreener"] = event.value
         elif input_id == "gmgn-search":
             self.search_queries["gmgn"] = event.value
+        elif input_id == "all_symbols-min-volume":
+            self.search_queries["all_symbols"] = event.value
         else:
             return
 
@@ -325,6 +330,9 @@ class MemeCoinTUI(App):
             elif self.current_tab == "gmgn":
                 results = self.query_one("#gmgn-results", VerticalGroup)
                 await refresh_gmgn_results(results, self.search_queries["gmgn"])
+            elif self.current_tab == "all_symbols":
+                results = self.query_one("#all_symbols-results", VerticalGroup)
+                await refresh_all_symbols_results(results, self.search_queries["all_symbols"])
         except NoMatches:
             return
         finally:
@@ -347,7 +355,9 @@ class MemeCoinTUI(App):
         async with content_body.batch():
             await content_body.remove_children()
 
-            if self.current_tab == "dexscreener":
+            if self.current_tab == "all_symbols":
+                await mount_all_symbols(content_body, self.search_queries["all_symbols"])
+            elif self.current_tab == "dexscreener":
                 await mount_dexscreener(content_body, self.search_queries["dexscreener"])
             elif self.current_tab == "gmgn":
                 await mount_gmgn(content_body, self.search_queries["gmgn"])
